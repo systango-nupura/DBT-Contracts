@@ -85,6 +85,9 @@ contract DBTI is
     // Address to which all admin fee will be transferred
     address public adminFeeAccount;
 
+    // Indicated whether NFT can be transferred or not
+    bool public nftTransferEnabled;
+
     // Event to emit when a new trade is placed
     event TradeCreated(uint256 tradeId, address trader);
 
@@ -94,26 +97,29 @@ contract DBTI is
     // Event to emit when a trade is claimed
     event RewardClaimed(uint256[] tradeId);
 
-    // Events to emit when a new admin is added
+    // Event to emit when a new admin is added
     event AdminAdded(address adminAddress);
 
-    // Events to emit when an admin is removed
+    // Event to emit when an admin is removed
     event AdminRemoved(address adminAddress);
 
-    // Events to emit when a new signer is added
+    // Event to emit when a new signer is added
     event SignerAdded(address signerAddress);
 
-    // Events to emit when a signer is removed
+    // Event to emit when a signer is removed
     event SignerRemoved(address signerAddress);
 
-    // Events to emit when threshold amount is updated
+    // Event to emit when threshold amount is updated
     event ThresholdAmountUpdated(uint256 amount);
 
-    // Events to emit when treasury account is updated
+    // Event to emit when treasury account is updated
     event TreasuryAccountUpdated(address account);
 
-    // Events to emit when Admin Fee account is updated
+    // Event to emit when Admin Fee account is updated
     event AdminFeeAccountUpdated(address account);
+
+    // Event to emit when NFT transferability is updated
+    event NftTransferabilityUpdated(bool status);
 
     /**
      * @notice Modifier to restrict access to admin only
@@ -424,6 +430,21 @@ contract DBTI is
     }
 
     /**
+     * @notice Function to Update nft transfer status
+     * @dev Only admin can call this function.
+     * @param status The state (true/false) to update transferability
+     */
+    function updateNftTransferability(
+        bool status
+    ) external isAdmin whenNotPaused {
+        if (status == nftTransferEnabled) {
+            revert SameValueAsPrevious();
+        }
+        nftTransferEnabled = status;
+        emit NftTransferabilityUpdated(nftTransferEnabled);
+    }
+
+    /**
      * @notice Function to withdraw any ERC-20 tokens sent to the contract
      * @dev Only admin can call this function.
      * @param token The token contract address to withdraw
@@ -524,26 +545,10 @@ contract DBTI is
     }
 
     /**
-     * @dev Soul-bound NFT. By overriding this function NFT's can't be transferred from one address to another.
-     */
-    // function _update(
-    //     address to,
-    //     uint256 tokenId,
-    //     address auth
-    // ) internal virtual override returns (address) {
-    //     require(
-    //         auth == address(0) || to == address(0),
-    //         "Token not transferable"
-    //     );
-    //     return super._update(to, tokenId, auth);
-    // }
-
-
-    /**
      * @dev Soul-bound NFT. By overriding this function NFT's can't be transferred from one address to another. Openzepplin V4.9.5
      */
     function _beforeTokenTransfer(address from, address to, uint256 firstTokenId, uint256 batchSize) internal override virtual {
-        if(from != address(0) && to != address(0)){
+        if(!nftTransferEnabled && (from != address(0) && to != address(0))){
             revert TokenNotTransferrable();
         }
         super._beforeTokenTransfer(from, to, firstTokenId, batchSize);

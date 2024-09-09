@@ -92,7 +92,7 @@ contract DBTI is
     event TradeCreated(uint256 tradeId, address trader);
 
     // Event to emit when a trade is resolved
-    event TradeResolved(uint256[] tradeId, TradeStatus status);
+    event TradesResolved(uint256[] lostTradeIds, uint256[] wonTradeIds);
 
     // Event to emit when a trade is claimed
     event RewardClaimed(uint256[] tradeId);
@@ -298,38 +298,59 @@ contract DBTI is
             ), "Token transfer failed");        
         }
 
-        require(IERC20Upgradeable(token).transferFrom(
-            _msgSender(),
-            adminFeeAccount,
-            adminFee
-        ), "Token transfer failed"); 
+        if( adminFee > 0 ){
+            require(IERC20Upgradeable(token).transferFrom(
+                _msgSender(),
+                adminFeeAccount,
+                adminFee
+            ), "Token transfer failed"); 
+        }
         // Emit an event to signal that a new trade has been placed
         emit TradeCreated(tradeId, trader);
     }
 
+
     /**
-     * @notice Function to resolve a trade
-     * @dev Only admin can call this function.
-     * @param tradeId The array of tradeIds to be resolve
-     */
-    function resolveTrade(
-        uint256[] memory tradeId,
-        TradeStatus status 
+    * @notice Function to resolve trades
+    * @dev Only admin can call this function.
+    * @param lostTradeIds The array of tradeIds to be resolved as LOST
+    * @param wonTradeIds The array of tradeIds to be resolved as WON
+    */
+    function resolveTrades(
+        uint256[] memory lostTradeIds,
+        uint256[] memory wonTradeIds
     ) external isAdmin nonReentrant whenNotPaused {
-        for (uint8 i = 0; i < tradeId.length; i++) {
-            if (block.timestamp <= trades[tradeId[i]].endTime) {
+        for (uint8 i = 0; i < lostTradeIds.length; i++) {
+            uint256 tradeId = lostTradeIds[i];
+            if (block.timestamp <= trades[tradeId].endTime) {
                 revert TradeNotExpired();
             }
-            if (trades[tradeId[i]].trader == ZERO_ADDRESS) {
+            if (trades[tradeId].trader == ZERO_ADDRESS) {
                 revert TradeNotFound();
             }
-            if (trades[tradeId[i]].status != TradeStatus.CREATED) {
+            if (trades[tradeId].status != TradeStatus.CREATED) {
                 revert TradeNotCreatedOrResolved();
             }
-            trades[tradeId[i]].status = status;
-            trades[tradeId[i]].claimed = true;
+            trades[tradeId].status = TradeStatus.LOST;
+            trades[tradeId].claimed = true;
         }
-        emit TradeResolved(tradeId, status);
+        
+        for (uint8 i = 0; i < wonTradeIds.length; i++) {
+            uint256 tradeId = wonTradeIds[i];
+            if (block.timestamp <= trades[tradeId].endTime) {
+                revert TradeNotExpired();
+            }
+            if (trades[tradeId].trader == ZERO_ADDRESS) {
+                revert TradeNotFound();
+            }
+            if (trades[tradeId].status != TradeStatus.CREATED) {
+                revert TradeNotCreatedOrResolved();
+            }
+            trades[tradeId].status = TradeStatus.WON;
+            trades[tradeId].claimed = true;
+        }
+        
+        emit TradesResolved(lostTradeIds, wonTradeIds);
     }
 
     /**

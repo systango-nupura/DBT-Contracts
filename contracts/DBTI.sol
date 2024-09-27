@@ -20,16 +20,17 @@ error AddressNotAdmin();
 error AddressNotSigner();
 error SignatureExpired();
 error TraderAddressMismatch();
-error TradeAlreadyExits();
+error TradeAlreadyExits(uint256 tradeId);
 error InvalidSigner();
-error TradeNotExpired();
-error TradeNotFound();
-error TradeNotCreatedOrResolved();
-error TradeAlreadyClaimed();
+error TradeNotExpired(uint256 tradeId);
+error TradeNotFound(uint256 tradeId);
+error TradeNotCreatedOrResolved(uint256 tradeId);
+error TradeAlreadyClaimed(uint256 tradeId);
 error SameValueAsPrevious();
 error NonExistantToken();
 error TokenNotTransferrable();
 error EmptyString();
+error TradeNotResolved(uint256 tradeId);
 
 contract DBTI is
     Initializable,
@@ -250,7 +251,7 @@ contract DBTI is
                 revert TraderAddressMismatch();
             }
             if (trades[tradeId].trader != ZERO_ADDRESS) {
-                revert TradeAlreadyExits();
+                revert TradeAlreadyExits(tradeId);
             }
             bytes32 tradeHash = keccak256(encodedTradeData);
             address signer = tradeHash.toEthSignedMessageHash().recover(
@@ -323,31 +324,29 @@ contract DBTI is
         for (uint8 i = 0; i < lostTradeIds.length; i++) {
             uint256 tradeId = lostTradeIds[i];
             if (block.timestamp <= trades[tradeId].endTime) {
-                revert TradeNotExpired();
+                revert TradeNotExpired(tradeId);
             }
             if (trades[tradeId].trader == ZERO_ADDRESS) {
-                revert TradeNotFound();
+                revert TradeNotFound(tradeId);
             }
             if (trades[tradeId].status != TradeStatus.CREATED) {
-                revert TradeNotCreatedOrResolved();
+                revert TradeNotCreatedOrResolved(tradeId);
             }
             trades[tradeId].status = TradeStatus.LOST;
-            trades[tradeId].claimed = true;
         }
         
         for (uint8 i = 0; i < wonTradeIds.length; i++) {
             uint256 tradeId = wonTradeIds[i];
             if (block.timestamp <= trades[tradeId].endTime) {
-                revert TradeNotExpired();
+                revert TradeNotExpired(tradeId);
             }
             if (trades[tradeId].trader == ZERO_ADDRESS) {
-                revert TradeNotFound();
+                revert TradeNotFound(tradeId);
             }
             if (trades[tradeId].status != TradeStatus.CREATED) {
-                revert TradeNotCreatedOrResolved();
+                revert TradeNotCreatedOrResolved(tradeId);
             }
             trades[tradeId].status = TradeStatus.WON;
-            trades[tradeId].claimed = true;
         }
         
         emit TradesResolved(lostTradeIds, wonTradeIds);
@@ -383,20 +382,19 @@ contract DBTI is
         uint256 totalReward = 0;
         for (uint8 i = 0; i < tradeId.length; i++) {
             if (trades[tradeId[i]].trader == ZERO_ADDRESS) {
-                revert TradeNotFound();
+                revert TradeNotFound(tradeId[i]);
             }
             if (ownerOf(tradeId[i]) != _msgSender()) {
                 revert TraderAddressMismatch();
             }
-            if (block.timestamp <= trades[tradeId[i]].endTime) {
-                revert TradeNotExpired();
+            if (trades[tradeId[i]].status != TradeStatus.WON) {
+                revert TradeNotResolved(tradeId[i]);
             }
             if (trades[tradeId[i]].claimed) {
-                revert TradeAlreadyClaimed();
+                revert TradeAlreadyClaimed(tradeId[i]);
             }
             totalReward += trades[tradeId[i]].reward;
             trades[tradeId[i]].claimed = true;
-            trades[tradeId[i]].status = TradeStatus.WON;
         }
         require(IERC20Upgradeable(trades[tradeId[0]].token).transfer(
             _msgSender(),
@@ -483,17 +481,29 @@ contract DBTI is
 
     /**
      * @notice Function to check whether a trade is eligible for resolution or not
-     * @param tradeId The tradeId to check for resolution
+     * @param tradeIds The tradeId to check for resolution
      */
-    function checkTradeForResolution(
-        uint256 tradeId
-    ) external view returns (bool){
-        return
-            trades[tradeId].trader != ZERO_ADDRESS &&
-            trades[tradeId].status == TradeStatus.CREATED &&
-            block.timestamp > trades[tradeId].endTime;
+    function checkTradeForResolutionBatch(
+        uint16[] memory tradeIds
+    ) external view returns (uint256[] memory, uint256[] memory, uint256[] memory){
+        uint256[] memory notFoundIds = new uint256[] (tradeIds.length);
+        uint256[] memory notExpiredIds = new uint256[] (tradeIds.length);
+        uint256[] memory notCreatedOrResolvedIds = new uint256[] (tradeIds.length);
+        for (uint16 i = 0; i < tradeIds.length; i++) {
+            uint256 tradeId = tradeIds[i];
+            if (trades[tradeId].trader == ZERO_ADDRESS) {
+                notFoundIds[i] = tradeId;
+            }
+            if (block.timestamp <= trades[tradeId].endTime) {
+                notExpiredIds[i] = tradeId;
+            }
+            if (trades[tradeId].status != TradeStatus.CREATED) {
+                notCreatedOrResolvedIds[i] = tradeId;
+            }
+        }
+        return (notFoundIds, notExpiredIds, notCreatedOrResolvedIds);
     }
-
+ 
     /**
      * @notice Adds a new admin to the contract.
      * @dev Only admin can call this function.
